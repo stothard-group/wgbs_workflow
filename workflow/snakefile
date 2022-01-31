@@ -1,0 +1,367 @@
+from os.path import join
+from os import listdir
+import pandas as pd
+
+
+# snakemake --snakefile workflow/snakefile --cluster "sbatch -N 1 -c {cluster.n} \
+# --mem={cluster.pmem} --time={cluster.time} --account=account" --rerun-incomplete --printshellcmds -j 20
+
+#########################################################################################
+# Path to config file
+#########################################################################################
+configfile: 'config/WGBS.config.yaml'
+
+#########################################################################################
+# Set local variables
+#########################################################################################
+RAW_FASTQ_DIR = config["raw_fastq_dir"]
+OUTPUT_DIR = "results/"
+TRIMGALORE_DIR = OUTPUT_DIR + "trimmed/"
+ALIGN_DIR = OUTPUT_DIR + "align/"
+GENOME_DIR = config["genome_dir"]
+GENOME_BASENAME = config["genome_base"]
+RECAL_DIR = OUTPUT_DIR + "base_quality_recal/"
+STAT_DIR = OUTPUT_DIR + "stat_and_coverage/"
+CGMAP_DIR = OUTPUTDIR + "cgmap/"
+
+
+READGROUP_FILE = config["readgroup_file"]
+TRIMGALORE = config["trimgalore"]
+BISMARK = config["bismark"]
+CGMAPTOOLS = config["cgmaptools"]
+
+MIN_COVERAGE_DEPTH = config["min_coverage_depth"]
+
+#########################################################################################
+# Define samples
+#########################################################################################
+samples, = glob_wildcards(join(RAW_FASTQ_DIR + "{sample}_R1.fastq.gz"))
+
+def get_combined_samples():
+    rg_list = pd.read_csv(READGROUP_FILE, sep='\t')
+    sam_list_all = rg_list['SM'].tolist()
+    sam_list = list(set(sam_list_all))
+    return sam_list
+
+list_of_samples = get_combined_samples()
+
+#########################################################################################
+# rule to trigger generation of target files
+#########################################################################################
+rule final:
+    input:
+        expand(TRIMGALORE_DIR + "{sample}_R1.trimmed.fastq.gz", sample=samples), #  trimming
+        GENOME_DIR + "Bisulfite_Genome/CT_conversion/BS_CT.1.bt2", #  build genome index
+        expand(RECAL_DIR+ "{sample}.deduplicated.rgid.bam", sample=samples), # add read group IDs
+        expand(RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam", sample_list_val=list_of_samples), #  sort merged bam files
+        expand(RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam.bai", sample_list_val=list_of_samples), #  index sorted bismark files
+
+
+
+#########################################################################################
+# run trimgalore on raw data
+#########################################################################################
+rule trimgalore:
+    input:
+        R1 = RAW_FASTQ_DIR + "{sample}_R1.fastq.gz",
+        R2 = RAW_FASTQ_DIR + "{sample}_R2.fastq.gz"
+    output:
+        R1 = TRIMGALORE_DIR + "{sample}_R1.trimmed.fastq.gz",
+        R2 = TRIMGALORE_DIR + "{sample}_R2.trimmed.fastq.gz"
+    threads: 1
+    resources:
+        cores= 1,
+        mem_mb= 2000,
+        runtime= 120
+    shell:
+        """
+        module load fastqc
+        {TRIMGALORE} --2colour 20 --paired --gzip {input.R1} {input.R2} 
+        """
+
+#########################################################################################
+# prep genome for bismark
+#########################################################################################
+
+rule prep_genome:
+    input:
+        GENOME
+    output:
+        GENOME_DIR + "Bisulfite_Genome/CT_conversion/BS_CT.1.bt2"
+    threads: 4
+    resources:
+        cores= 4,
+        mem_mb= 8000,
+        runtime= 240
+    shell:
+        """
+        module load samtools perl StdEnv/2020 bismark bowtie2
+        bismark_genome_preparation --parallel {threads} {GENOME_DIR} 
+        """
+
+#########################################################################################
+# run bismark
+#########################################################################################
+
+rule align:
+    input:
+        R1 = TRIMGALORE_DIR + "{sample}_R1.trimmed.fastq.gz",
+        R2 = TRIMGALORE_DIR + "{sample}_R2.trimmed.fastq.gz",
+        g_complete = GENOME_DIR + "Bisulfite_Genome/CT_conversion/BS_CT.1.bt2"
+    params:
+        tmpdir = "./tmp_{sample}"
+    threads: 4 # PARALLEL 4 ~ 24 THREADS AND 48GB RAM, DO NOT CHANGE WITHOUT READING BISMARK README
+    resources:
+        cores= 24,
+        mem_mb= 48000,
+        runtime= 240
+    output:
+        ALIGN_DIR + "{sample}_R1_bismark_bt2_pe.bam"
+    shell:
+        """
+        module load samtools perl StdEnv/2020 bismark bowtie2
+        bismark --genome {GENOME_DIR} -1 {input.R1} -2 {input.R2} \
+        --old_flag --no_dovetail \
+        --parallel {threads} \
+        --temp_dir {params.tmpdir} \
+        -o {ALIGN_DIR}
+        """
+
+#########################################################################################
+# bisulfite data deduplication
+#########################################################################################
+
+rule dedup:
+    input:
+        ALIGN_DIR + "{sample}_R1_bismark_bt2_pe.bam"
+    output:
+        RECAL_DIR + "{sample}.deduplicated.bam"
+    threads: 4
+    resources:
+        cores= 4,
+        mem_mb= 8000,
+        runtime= 240
+    params:
+        lambda wildcards: wildcards.sample
+    shell:
+        """
+        module load samtools perl StdEnv/2020 bismark bowtie2
+        deduplicate_bismark -p \
+        --output_dir {RECAL_DIR} -o {params} \
+        {input}
+        """
+
+#########################################################################################
+# add read group information # Note - do this here rather than with bt2
+#########################################################################################
+
+
+def get_rg_label(sample):
+    split_sample = sample.split(".")
+    sample_id_part = split_sample[4]
+    rg_list = pd.read_csv(READGROUP_FILE, sep='\t')
+    line = rg_list[rg_list['SM'] == sample_id_part].copy()
+    ID = line['ID'].values[0]
+    LB = line['LB'].values[0]
+    SM = line['SM'].values[0]
+    PL = "ILLUMINA"
+    PU = ID + "." + SM
+    rg_label = [ID, SM, PL, LB, PU]
+    return rg_label
+
+
+rule add_rgids:
+    input:
+        RECAL_DIR + "{sample}.deduplicated.bam"
+    output:
+        RECAL_DIR + "{sample}.deduplicated.rgid.bam"
+    params:
+        RG_label = lambda wildcards: get_rg_label('{sample}'.format(sample=wildcards.sample))
+    threads: 4
+    resources:
+        cores= 4,
+        mem_mb= 8000,
+        runtime= 240
+    shell:
+        """
+        module load java
+        module load picard
+        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar \
+        AddOrReplaceReadGroups \
+        I={input} O={output} \
+        --RGID {params.RG_label[0]} \
+        --RGSM {params.RG_label[1]} \
+        --RGPL {params.RG_label[2]} \
+        --RGLB {params.RG_label[3]} \
+        --RGPU {params.RG_label[4]} \
+        --CREATE_INDEX=true --VALIDATION_STRINGENCY=SILENT --SORT_ORDER=queryname
+        """
+
+#########################################################################################
+# merge sample files
+#########################################################################################
+
+def merge_sample_list(sample_name):
+    """
+    Generates an input line for Picard MergeSamFiles for samples that need to be aggregated
+    :param sample_name: base name of a sample (not the whole file name)
+    :return: -I FC1_L1_SAM1.bam -I FC1_L2_SAM1.bam -I FC2_L1_SAM1.bam
+    """
+    aligndir_files = os.listdir(RECAL_DIR)
+    m_bam_list = []
+    for file in aligndir_files:
+        if file.endswith(".deduplicated.rgid.bam"):
+            m_bam_list.append(file)
+    keep_bams = []
+    for bam in m_bam_list:
+        split_bam_name = bam.split(".")
+        if sample_name == split_bam_name[4]:
+            keep_bams.append(bam)
+    input_string = ''
+    for kept_bam in keep_bams:
+        input_string = input_string + "I=" + RECAL_DIR + kept_bam + " "
+    new_input_string = input_string[:-1]
+    return new_input_string
+
+rule merge:
+    input:
+        expand(RECAL_DIR + "{sample}.deduplicated.rgid.bam", sample=samples)
+    params:
+        input_line = lambda wildcards: merge_sample_list('{val}'.format(val=wildcards.sample_list_val)),
+        tmpdir= "./tmp_{sample_list_val}"
+    threads: 4
+    resources:
+        cores= 4,
+        mem_mb= 8000,
+        runtime= 240
+    output:
+        RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.bam"
+    shell:
+        """
+        module load java
+        module load picard
+        mkdir -p {params.tmpdir};
+        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar \
+        MergeSamFiles \ 
+        {params.input_line} \
+        O={output} \
+        SORT_ORDER=queryname
+        """
+
+#########################################################################################
+# Sort merged bismark alignment files
+#########################################################################################
+
+rule sortsam:
+    input:
+        RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.bam"
+    output:
+        RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam"
+    threads: 4
+    resources:
+        cores= 4,
+        mem_mb= 8000,
+        runtime= 240
+    shell:
+        """
+        module load java
+        module load picard
+        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar \
+        SortSam \
+        I={input} O={output} \
+        SORT_ORDER=coordinate        
+        """
+
+
+#########################################################################################
+# Index sorted bismark files
+#########################################################################################
+
+rule b_index:
+    input:
+        RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam"
+    output:
+        RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam.bai"
+    threads: 1
+    resources:
+        cores= 1,
+        mem_mb= 2000,
+        runtime= 30
+    shell:
+        """
+        module load samtools
+        samtools index {input}
+        """
+
+#########################################################################################
+# Get coverage and alignment statistics
+#########################################################################################
+
+rule coverage:
+    input:
+        align = RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam",
+        index = RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam.bai"
+    output:
+        depth = STAT_DIR + "{sample_list_val}.average_coverage.txt",
+        mpileup = STAT_DIR + "{sample_list_val}.bases_covered.txt",
+        alignstats = STAT_DIR + "{sample_list_val}.alignment_stats.txt"
+    threads: 1
+    resources:
+        cores= 1,
+        mem_mb= 2000,
+        runtime= 120
+    shell:
+        """
+        module load samtools
+        samtools depth {input.align} | awk '{{sum+=$3}} END {{ print "Average = ",sum/NR}}' > {output.depth}
+        samtools mpileup {input.align} |  awk -v X="{MIN_COVERAGE_DEPTH}" '$4>=X' | wc -l > {output.mpileup}
+        samtools flagstat {input.align} > {output.alignstats}
+        """
+
+#########################################################################################
+# Make DNA methylation profiles (ATCGmaps) from alignments
+#########################################################################################
+
+rule cgmap_conversion:
+    input:
+        align = RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam",
+        index = RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam.bai"
+    output:
+        CGMAP_DIR + "{sample_list_val}.ATCGmap.gz"
+    params:
+        out = lambda wildcards: CGMAP_DIR + wildcards.sample_list_val,
+        genome = GENOME_DIR + GENOME_BASENAME + ".fa"
+    threads: 16
+    resources:
+        cores= 16,
+        mem_mb= 64000,
+        runtime= 720
+    shell:
+        """
+        {CGMAPTOOLS} convert bam2cgmap -b {input.align} \
+        -g {params.genome} \
+        --rmOverlap \
+        -o {params.out}
+        """
+
+#########################################################################################
+# Make DNA methylation profiles (ATCGmaps) from alignments
+#########################################################################################
+
+rule cgmap_bayes:
+    input:
+        CGMAP_DIR + "{sample_list_val}.ATCGmap.gz"
+    output:
+        vcf= CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.vcf",
+        out = CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.snv",
+    threads: 16
+    resources:
+        cores= 16,
+        mem_mb= 64000,
+        runtime= 720
+    shell:
+        """
+        {CGMAPTOOLS} snv -i {input} \
+        -o {output.out} -v {output.vcf} \
+        -m bayes --bayes-dynamicP
+        """

@@ -1,0 +1,19 @@
+# Directory with raw fastq files
+raw_fastq_dir: "/home/eherman/scratch/Stothard/BISULFITE/raw_data/"
+# Directory containing genome file
+genome_dir: "/home/eherman/scratch/Stothard/BISULFITE/resources/reference_files/genome/"
+# Base name of genome without .fa extension
+genome_base: "ARS-UCD1.2_Btau5.0.1Y"
+# Path to file containing read group IDs
+readgroup_file: "/home/eherman/scratch/Stothard/BISULFITE/resources/reference_files/rg_labels.txt"
+
+
+
+
+# TrimGalore path
+trimgalore: "/home/eherman/scratch/Stothard/BISULFITE/resources/TrimGalore-0.6.7/trim_galore"
+# CGmapTools path
+cgmaptools: "/home/eherman/scratch/Stothard/BISULFITE/resources/cgmaptools-0.1.2/cgmaptools"
+
+# Minimum depth for coverage breadth calculations with samtools mpileup
+min_coverage_depth: 10
