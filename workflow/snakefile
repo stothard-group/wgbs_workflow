@@ -55,7 +55,7 @@ rule final:
         expand(RECAL_DIR+ "{sample}.deduplicated.rgid.bam", sample=samples), # add read group IDs
         expand(RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam", sample_list_val=list_of_samples), #  sort merged bam files
         expand(RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam.bai", sample_list_val=list_of_samples), #  index sorted bismark files
-
+        expand(CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.vcf", sample_list_val=list_of_samples), #  get SNPs
 
 
 #########################################################################################
@@ -345,7 +345,7 @@ rule cgmap_conversion:
         """
 
 #########################################################################################
-# Make DNA methylation profiles (ATCGmaps) from alignments
+# Run CGmapTools with bayes and bayes-dynamicP to get SNPs
 #########################################################################################
 
 rule cgmap_bayes:
