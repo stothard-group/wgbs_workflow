@@ -1,11 +1,11 @@
 # Directory with raw fastq files
-raw_fastq_dir: "/home/eherman/scratch/Stothard/BISULFITE/raw_data/"
+raw_fastq_dir: "/home/eherman/scratch/Stothard/BISULFITE/raw_test/"
 # Directory containing genome file
 genome_dir: "/home/eherman/scratch/Stothard/BISULFITE/resources/reference_files/genome/"
 # Base name of genome without .fa extension
 genome_base: "ARS-UCD1.2_Btau5.0.1Y"
 # Path to file containing read group IDs
-readgroup_file: "/home/eherman/scratch/Stothard/BISULFITE/resources/reference_files/rg_labels.txt"
+readgroup_file: "/home/eherman/scratch/Stothard/BISULFITE/resources/reference_files/rg_labels_small.txt"
 
 
 
@@ -15,5 +15,9 @@ trimgalore: "/home/eherman/scratch/Stothard/BISULFITE/resources/TrimGalore-0.6.7
 # CGmapTools path
 cgmaptools: "/home/eherman/scratch/Stothard/BISULFITE/resources/cgmaptools-0.1.2/cgmaptools"
 
+
+# Number of chunks to split initial files into for processing
+# Files should be < 100M reads
+n_of_chunks: 5
 # Minimum depth for coverage breadth calculations with samtools mpileup
 min_coverage_depth: 10
