@@ -1,4 +1,4 @@
-__# Whole Genome Bisulfite Sequencing Workflow
+# Whole Genome Bisulfite Sequencing Workflow
 
  - FILE: workflow/snakefile
  - AUTH: Emily Herman (eherman@ualberta.ca)
