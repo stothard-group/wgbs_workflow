@@ -25,6 +25,7 @@ RECAL_DIR = OUTPUT_DIR + "base_quality_recal/"
 STAT_DIR = OUTPUT_DIR + "stat_and_coverage/"
 CGMAP_DIR = OUTPUT_DIR + "cgmap/"
 BENCHMARK_DIR = OUTPUT_DIR + "benchmark/"
+SNPSINDELS_DIR = OUTPUT_DIR + "snps/"
 
 
 
@@ -34,6 +35,7 @@ CGMAPTOOLS = config["cgmaptools"]
 
 MIN_COVERAGE_DEPTH = config["min_coverage_depth"]
 n_of_chunks = config["n_of_chunks"]
+
 
 #########################################################################################
 # Define samples
@@ -46,21 +48,25 @@ def get_combined_samples():
     sam_list = list(set(sam_list_all))
     return sam_list
 
-list_of_samples = get_combined_samples()
-
+#list_of_samples = get_combined_samples()
+list_of_samples, = glob_wildcards(join(CGMAP_DIR + "{sam}.bayes_dynamicP.SNPs.vcf"))
 #########################################################################################
 # rule to trigger generation of target files
 #########################################################################################
+localrules: remove_Ns, sample_header, hard_filter
+
 rule final:
     input:
         expand(SPLIT_DIR + "{sample}_R1_part{new}.fastq.gz", sample=samples, new=range(n_of_chunks)),
-        expand(TRIMGALORE_DIR + "{sample}_R1_part{new}.trimmed.fastq.gz", sample=samples, new=range(n_of_chunks)), #  trimming
+        expand(TRIMGALORE_DIR + "{sample}_R2_part{new}_val_2.fq.gz", sample=samples, new=range(n_of_chunks)), #  trimming
         GENOME_DIR + "Bisulfite_Genome/CT_conversion/BS_CT.1.bt2", #  build genome index
         expand(RECAL_DIR+ "{sample}.deduplicated.rgid.bam", sample=samples), # add read group IDs
         expand(RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam", sample_list_val=list_of_samples), #  sort merged bam files
         expand(RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam.bai", sample_list_val=list_of_samples), #  index sorted bismark files
+        expand(STAT_DIR + "{sample_list_val}.alignment_stats.txt", sample_list_val=list_of_samples), #  calculate statistics
         expand(CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.vcf", sample_list_val=list_of_samples), #  get SNPs
-
+        GENOME_DIR + GENOME_BASENAME + ".dict", #  create sequence dictionary for reference
+        expand(SNPSINDELS_DIR + "{sample_list_val}.goodSNPs.vcf", sample_list_val=list_of_samples) #  get the good SNPs at the end
 
 
 #########################################################################################
@@ -85,6 +91,7 @@ rule split:
         r2 = lambda wildcards: SPLIT_DIR  + wildcards.sample + '_R2_part',
     shell:
         """
+        module load java
         partition.sh -Xmx{resources.mem_mb}m in={input.r1} in2={input.r2} out={params.r1}%.fastq.gz \
                 out2={params.r2}%.fastq.gz ways={n_of_chunks}; \
         touch {output.r1}; \
@@ -101,15 +108,15 @@ rule trimgalore:
         R1 = (SPLIT_DIR + "{sample}_R1_part{new}.fastq.gz"),
         R2 = (SPLIT_DIR + "{sample}_R2_part{new}.fastq.gz")
     output:
-        R1 = TRIMGALORE_DIR + "{sample}_R1_part{new}.trimmed.fastq.gz",
-        R2 = TRIMGALORE_DIR + "{sample}_R2_part{new}.trimmed.fastq.gz"
+        R1 = TRIMGALORE_DIR + "{sample}_R1_part{new}_val_1.fq.gz",
+        R2 = TRIMGALORE_DIR + "{sample}_R2_part{new}_val_2.fq.gz"
     benchmark:
         BENCHMARK_DIR + "trimgalore.{sample}_part{new}.txt"
     threads: 4
     resources:
         cores= 4,
-        mem_mb= 32000,
-        runtime= 600
+        mem_mb= 8000,
+        runtime= 180
     shell:
         """
         module load python/3.9
@@ -121,7 +128,6 @@ rule trimgalore:
 #########################################################################################
 # prep genome for bismark
 #########################################################################################
-
 rule prep_genome:
     input:
         GENOME_DIR + GENOME_BASENAME + ".fa"
@@ -131,11 +137,11 @@ rule prep_genome:
         GENOME_DIR
     benchmark:
         BENCHMARK_DIR + "prep_genome.txt"
-    threads: 8
+    threads: 4
     resources:
-        cores= 8,
-        mem_mb= 32000,
-        runtime= 240
+        cores= 4,
+        mem_mb= 16000,
+        runtime= 120
     shell:
         """
         module load samtools perl StdEnv/2020 bismark bowtie2
@@ -148,20 +154,20 @@ rule prep_genome:
 
 rule align:
     input:
-        R1 = TRIMGALORE_DIR + "{sample}_R1_part{new}.trimmed.fastq.gz",
-        R2 = TRIMGALORE_DIR + "{sample}_R2_part{new}.trimmed.fastq.gz",
+        R1 = TRIMGALORE_DIR + "{sample}_R1_part{new}_val_1.fq.gz",
+        R2 = TRIMGALORE_DIR + "{sample}_R2_part{new}_val_2.fq.gz",
         g_complete = GENOME_DIR + "Bisulfite_Genome/CT_conversion/BS_CT.1.bt2"
     benchmark:
         BENCHMARK_DIR + "align.{sample}_part{new}.txt"
     params:
         tmpdir = "./tmp_{sample}_part{new}"
-    threads: 4 # PARALLEL 4 ~ 24 THREADS AND 48GB RAM, DO NOT CHANGE WITHOUT READING BISMARK README
+    threads: 8 # PARALLEL 4 ~ 24 THREADS AND 48GB RAM, DO NOT CHANGE WITHOUT READING BISMARK README
     resources:
         cores= 24,
-        mem_mb= 48000,
-        runtime= 240
+        mem_mb= 64000,
+        runtime= 720
     output:
-        ALIGN_DIR + "{sample}_R1_part{new}.trimmed_bismark_bt2_pe.bam"
+        ALIGN_DIR + "{sample}_R1_part{new}_val_1_bismark_bt2_pe.bam"
     shell:
         """
         module load samtools perl StdEnv/2020 bismark bowtie2
@@ -178,22 +184,25 @@ rule align:
 
 rule merge_bams:
     input:
-        bam = expand(ALIGN_DIR + "{{sample}}_R1_part{new}.trimmed_bismark_bt2_pe.bam",
+        bam = expand(ALIGN_DIR + "{{sample}}_R1_part{new}_val_1_bismark_bt2_pe.bam",
             new=[str(i) for i in list(range(n_of_chunks))]),
     output:
         ALIGN_DIR + "{sample}.bismark.m.bam"
     resources:
         cores = 1,
-        runtime = 360,
-        mem_mb = 4000,
+        runtime = 700,
+        mem_mb = 8000,
     params:
-        bam = ' '.join(["I=" + ALIGN_DIR + "{sample}_part" + str(new) + ".trimmed_bismark_bt2_pe.bam" for new in \
+        bam = ' '.join(["I=" + ALIGN_DIR + "{sample}_R1_part" + str(new) + "_val_1_bismark_bt2_pe.bam" for new in \
                 list(range(n_of_chunks))]),
+        tmp = "tmp/"
     shell:
         """
         module load java
         module load picard
-        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar MergeSamFiles {params.bam} O={output} --SORT_ORDER queryname
+        export JAVA_TOOL_OPTIONS=-Xmx{resources.mem_mb}m
+        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar MergeSamFiles {params.bam} O={output} \
+        SORT_ORDER=queryname VALIDATION_STRINGENCY=SILENT TMP_DIR={params.tmp} MAX_RECORDS_IN_RAM=1000000
         """
 
 #########################################################################################
@@ -207,11 +216,11 @@ rule dedup:
         RECAL_DIR + "{sample}.deduplicated.bam"
     benchmark:
         BENCHMARK_DIR + "dedup.{sample}.txt"
-    threads: 4
+    threads: 16
     resources:
-        cores= 4,
-        mem_mb= 8000,
-        runtime= 240
+        cores= 16,
+        mem_mb= 64000,
+        runtime= 420
     params:
         lambda wildcards: wildcards.sample
     shell:
@@ -249,12 +258,13 @@ rule add_rgids:
     benchmark:
         BENCHMARK_DIR + "add_rgids.{sample}.txt"
     params:
-        RG_label = lambda wildcards: get_rg_label('{sample}'.format(sample=wildcards.sample))
-    threads: 4
+        RG_label = lambda wildcards: get_rg_label('{sample}'.format(sample=wildcards.sample)),
+        tmp = "tmp/"
+    threads: 1
     resources:
-        cores= 4,
-        mem_mb= 8000,
-        runtime= 240
+        cores= 1,
+        mem_mb= 2000,
+        runtime= 420
     shell:
         """
         module load java
@@ -262,12 +272,12 @@ rule add_rgids:
         java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar \
         AddOrReplaceReadGroups \
         I={input} O={output} \
-        --RGID {params.RG_label[0]} \
-        --RGSM {params.RG_label[1]} \
-        --RGPL {params.RG_label[2]} \
-        --RGLB {params.RG_label[3]} \
-        --RGPU {params.RG_label[4]} \
-        --CREATE_INDEX=true --VALIDATION_STRINGENCY=SILENT --SORT_ORDER=queryname
+        RGID={params.RG_label[0]} \
+        RGSM={params.RG_label[1]} \
+        RGPL={params.RG_label[2]} \
+        RGLB={params.RG_label[3]} \
+        RGPU={params.RG_label[4]} \
+        CREATE_INDEX=true VALIDATION_STRINGENCY=SILENT SORT_ORDER=queryname TMP_DIR={params.tmp}
         """
 
 #########################################################################################
@@ -307,23 +317,24 @@ rule merge:
         tmpdir= "./tmp_{sample_list_val}"
     benchmark:
         BENCHMARK_DIR + "merge.{sample_list_val}.txt"
-    threads: 4
+    threads: 2
     resources:
-        cores= 4,
-        mem_mb= 8000,
-        runtime= 240
+        cores= 2,
+        mem_mb= 2000,
+        runtime= 420
     output:
         RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.bam"
     shell:
         """
         module load java
         module load picard
-        mkdir -p {params.tmpdir};
+        mkdir -p {params.tmpdir}
+        export JAVA_TOOL_OPTIONS=-Xmx{resources.mem_mb}m
         java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar \
-        MergeSamFiles \ 
+        MergeSamFiles \
         {params.input_line} \
         O={output} \
-        SORT_ORDER=queryname
+        SORT_ORDER=queryname TMP_DIR={params.tmpdir}
         """
 
 #########################################################################################
@@ -335,21 +346,19 @@ rule sortsam:
         RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.bam"
     output:
         RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam"
+    params:
+        tmpdir = "./tmp_{sample_list_val}"
     benchmark:
         BENCHMARK_DIR + "sortsam.{sample_list_val}.txt"
-    threads: 4
+    threads: 8
     resources:
-        cores= 4,
-        mem_mb= 8000,
-        runtime= 240
+        cores= 8,
+        mem_mb= 16000,
+        runtime= 300
     shell:
         """
-        module load java
-        module load picard
-        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar \
-        SortSam \
-        I={input} O={output} \
-        SORT_ORDER=coordinate        
+        module load samtools
+        samtools sort -o {output} -O bam -@ {threads} {input}
         """
 
 
@@ -367,7 +376,7 @@ rule b_index:
     threads: 1
     resources:
         cores= 1,
-        mem_mb= 2000,
+        mem_mb= 500,
         runtime= 30
     shell:
         """
@@ -393,7 +402,7 @@ rule coverage:
     resources:
         cores= 1,
         mem_mb= 2000,
-        runtime= 120
+        runtime= 420
     shell:
         """
         module load samtools
@@ -417,11 +426,11 @@ rule cgmap_conversion:
     params:
         out = lambda wildcards: CGMAP_DIR + wildcards.sample_list_val,
         genome = GENOME_DIR + GENOME_BASENAME + ".fa"
-    threads: 16
+    threads: 1
     resources:
-        cores= 16,
-        mem_mb= 64000,
-        runtime= 720
+        cores= 1,
+        mem_mb= 2000,
+        runtime= 2160
     shell:
         """
         {CGMAPTOOLS} convert bam2cgmap -b {input.align} \
@@ -430,26 +439,143 @@ rule cgmap_conversion:
         -o {params.out}
         """
 
-#########################################################################################
-# Run CGmapTools with bayes and bayes-dynamicP to get SNPs
-#########################################################################################
-
-rule cgmap_bayes:
+rule cgmap:
     input:
         CGMAP_DIR + "{sample_list_val}.ATCGmap.gz"
     output:
         vcf= CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.vcf",
         out = CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.snv"
     benchmark:
-        BENCHMARK_DIR + "cpmap_bayes.{sample_list_val}.txt"
-    threads: 16
+        BENCHMARK_DIR + "cgmap.{sample_list_val}.txt"
+    threads: 1
     resources:
-        cores= 16,
-        mem_mb= 64000,
-        runtime= 720
+        cores= 1,
+        mem_mb= 2000,
+        runtime= 4320
     shell:
         """
+        module load python/2.7
         {CGMAPTOOLS} snv -i {input} \
         -o {output.out} -v {output.vcf} \
         -m bayes --bayes-dynamicP
+        """
+
+rule sample_header:
+    input:
+        CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.vcf"
+    params:
+        lambda wildcards: wildcards.sample_list_val
+    output:
+        CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.reheader.vcf"
+    shell:
+        """
+        sed -e 's/NA00001/{params}/g' {input} > {output}
+        """
+
+#########################################################################################
+# Remove unidentified variants
+#########################################################################################
+
+rule remove_Ns:
+    input:
+        CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.reheader.vcf"
+    output:
+        SNPSINDELS_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.rh.noNs.vcf",
+    shell:
+        """
+        cat {input} | grep -vP '^#'  > {wildcards.sample_list_val}.vcf.body
+        cat {input} | grep -P '^#' > {output}
+        cat {wildcards.sample_list_val}.vcf.body | awk -v OFS='\t' '{{ if(($4!="N" && ($5=="A"||$5=="C"||$5=="G"||$5=="T"))) {{ print }} }}' >> {output}
+        rm {wildcards.sample_list_val}.vcf.body
+        """
+
+#########################################################################################
+# Select bi-allelic SNPs
+#########################################################################################
+rule extract_snps:
+    input:
+        SNPSINDELS_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.rh.noNs.vcf"
+    output:
+        SNPSINDELS_DIR + "{sample_list_val}.rawSNPs.vcf"
+    params:
+        genome = GENOME_DIR + GENOME_BASENAME + ".fa"
+    benchmark:
+        BENCHMARK_DIR + "extract_snps.{sample_list_val}.txt"
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 60,
+        mem_mb = 8000,
+    shell:
+        """
+        module load gatk
+        gatk SelectVariants \
+            -R {params.genome} \
+            -V {input} \
+            --select-type-to-include SNP \
+            --restrict-alleles-to BIALLELIC \
+            -O {output}
+        """
+
+rule sequence_dict:
+    input:
+        GENOME_DIR + GENOME_BASENAME + ".fa"
+    output:
+        GENOME_DIR + GENOME_BASENAME + ".dict"
+    threads: 1
+    resources:
+        cores= 1,
+        mem_mb= 1000,
+        runtime= 30
+    shell:
+        """
+        module load java
+        module load picard
+        export JAVA_TOOL_OPTIONS=-Xmx{resources.mem_mb}m
+        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar CreateSequenceDictionary \
+        R={input} \
+        O={output}
+        """
+
+rule filter:
+    input:
+        vcf = SNPSINDELS_DIR + "{sample_list_val}.rawSNPs.vcf",
+        dict = GENOME_DIR + GENOME_BASENAME + ".dict",
+    params:
+        genome = GENOME_DIR + GENOME_BASENAME + ".fa",
+        tmp = "tmp/"
+    output:
+        SNPSINDELS_DIR + "{sample_list_val}.filtSNPs.vcf"
+    benchmark:
+        BENCHMARK_DIR + "filter.{sample_list_val}.txt"
+    threads: 2
+    resources:
+        cores= 2,
+        mem_mb= 8000,
+        runtime= 360
+    shell:
+        """
+        mkdir -p {params.tmp}
+        module load gatk samtools
+        export JAVA_TOOL_OPTIONS=-Xmx{resources.mem_mb}m
+        gatk VariantFiltration \
+        -R {params.genome} \
+        -V {input.vcf} \
+        --genotype-filter-expression 'DP < 10 || DP > 172' \
+        --genotype-filter-name 'FAIL_DP' \
+        -O {output} --tmp-dir {params.tmp}
+        """
+
+#########################################################################################
+# Hard filter SNPs that pass quality check and are genotyped
+#########################################################################################
+rule hard_filter:
+    input:
+        SNPSINDELS_DIR + "{sample_list_val}.filtSNPs.vcf"
+    output:
+        SNPSINDELS_DIR + "{sample_list_val}.goodSNPs.vcf"
+    shell:
+        """
+        module load bcftools
+        bcftools view -O v -o {output}  -e 'GT ="." | (FMT/DP < 10 || FMT/DP > 172)' {input}
         """
