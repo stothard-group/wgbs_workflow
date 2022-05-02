@@ -8,7 +8,9 @@
 This Snakemake workflow processes whole genome bisulfite sequence data and extracts single nucleotide variants. The 
 input is short read WGBS data in fastq format, and the output is a genotyped VCF file for each sample.
 
-README Sections
+For an explanation of each workflow step, see [WGBS_workflow.md](https://github.com/stothard-group/wgbs_workflow/blob/main/WGBS_workflow.md)
+
+_README Sections_
 
 [Installation](#installation)
 
