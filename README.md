@@ -83,7 +83,7 @@ snakemake --snakefile workflow/snakefile --cluster "sbatch -N 1 -c {resources.co
 --time={resources.runtime} --account=account" --rerun-incomplete --printshellcmds -j 20
 
 
-## Memory requirements
+### Memory requirements
 
 This workflow requires at most 16 cores and 64GB RAM for running Bismark alignment and deduplication steps. The longest 
 job is Bismark alignment, for which 12 hours is allocated by default. Resource limits can be adjusted for individual 
