@@ -2,7 +2,7 @@
 
  - FILE: workflow/snakefile
  - AUTH: Emily Herman (eherman@ualberta.ca)
- - DATE: MAY 5, 2022
+ - DATE: MAY 2, 2022
  - VERS: 1.0
 
 This Snakemake workflow processes whole genome bisulfite sequence data and extracts single nucleotide variants. The 
