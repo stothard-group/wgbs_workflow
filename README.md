@@ -116,16 +116,16 @@ file specified in `config/WGBS.config.yaml`.
 
 | Directory          | File name                                     | Description                                                 |
 |--------------------|-----------------------------------------------|-------------------------------------------------------------|
-| split              | {inputID}_R{1,2}_part{n}.fastq.gz             | Raw fastq files split into n-parts <br/>(specified in config)    |
+| split              | {inputID}_R{1,2}_part{n}.fastq.gz             | Raw fastq files split into n-parts (specified in config)    |
 | trimmed            | {inputID}_R{1,2}_part{n}_val_1.fq.gz          | Trimmed fastq files split into n-parts                      |
-| align              | {inputID}_R1_part{n}_val_1_bismark_bt2_pe.bam | Bam alignment file produced by Bismark <br/>for each n-part      |
+| align              | {inputID}_R1_part{n}_val_1_bismark_bt2_pe.bam | Bam alignment file produced by Bismark <br/>for each n-part |
 | align              | {inputID}.bismark.m.bam                       | Merged bam file for each input ID                           |
 | base_quality_recal | {inputID}.deduplicated.bam                    | Bam file following read deduplication                       |
 | base_quality_recal | {inputID}.deduplicated.rgid.bam               | Deduplicated bam file with read group IDs added             |
 | base_quality_recal | {sample}.deduplicated.rgid.m.bam              | Bam files merged per sample if multiplexed                  |
 | base_quality_recal | {sample}.deduplicated.rgid.m.sorted.bam       | Sorted merged bam file                                      |
 | stat_and_coverage  | {sample}.average_coverage.txt                 | Average sequencing depth across the sample                  |
-| stat_and_coverage  | {sample}.bases_covered.txt                    | Number of bases above the minimum depth <br/>specified in config |
+| stat_and_coverage  | {sample}.bases_covered.txt                    | Number of bases above the minimum depth specified in config |
 | stat_and_coverage  | {sample}.alignment_stats.txt                  | Read alignment statistics                                   |
 | cgmap              | {sample}.ATCGmap.gz                           | ATCGmap file derived from sample bam                        |
 | cgmap              | {sample}.bayes_dynamicP.SNPs.{vcf,snv}        | Variants in both VCF and SNV format files                   |
