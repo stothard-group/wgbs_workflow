@@ -65,7 +65,7 @@ Picard SortSam is used to sort the merged aligned files by coordinate. Files wer
 previously name-sorted as this is required for Bismark deduplication.
 
 ### 9. Index sorted files
-**Rule index**
+**Rule b_index**
 
 BAM file indexes are created using samtools.
 
@@ -85,8 +85,41 @@ Prior to SNV calling, all aligned BAM files must be transformed into ATCGmap fil
 This is done with the `CGMapTools convert bam2cgmap` utility.
 
 ### 12. Variants are called on each sample
-**Rule cgmap_bayes**
+**Rule cgmap**
 
 SNPs are called using CGMapTools in high-precision Bayesian mode (`-m bayes --bayes-dynamicP`).
 
+## VCF file filtering and formatting
+### 13. VCF header information is corrected
+**Rule sample_header**
 
+The default CGMapTools sample name NA00001 is replaced with the actual sample name using sed.
+
+### 14. SNPs with unknown alleles are removed 
+**Rule remove_Ns**
+
+SNPs with non-A/T/G/C alleles (REF or ALT) are removed from the file with awk.
+
+### 15. Biallelic SNP selection
+**Rule extract_snps**
+
+Indels and multi-allelic SNPs are removed from the file using GATK `SelectVariants` 
+`--select-type-to-include SNP` and `--restrict-alleles-to BIALLELIC`.
+
+### 16. Create sequence dictionary
+**Rule sequence_dict**
+
+Picard `CreateSequence` Dictionary is used to create a .dict file from the reference genome, 
+which will be used by the following variant filtration step.
+
+### 17. Add a depth filter expression to VCF file
+**Rule filter**
+
+GATK `VariantFiltration` is used to add a filter expression to variants that fail a depth 
+filter (DP < 10 || DP > 172).
+
+### 18. Hard filter variants to remove uncalled genotypes and depth filter fails
+**Rule hard_filter**
+
+Bcftools `view` is used to remove variants where either allele is uncalled (GT="."), and 
+variants that fail above depth filter.
