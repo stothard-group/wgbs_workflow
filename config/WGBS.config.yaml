@@ -1,12 +1,11 @@
 # Directory with raw fastq files
-raw_fastq_dir: "/home/eherman/scratch/Stothard/BISULFITE/raw_test/"
-# Directory containing genome file
+raw_fastq_dir: "/home/eherman/scratch/Stothard/BISULFITE/raw_data/"
+# Directory containing reference genome fasta file
 genome_dir: "/home/eherman/scratch/Stothard/BISULFITE/resources/reference_files/genome/"
 # Base name of genome without .fa extension
 genome_base: "ARS-UCD1.2_Btau5.0.1Y"
 # Path to file containing read group IDs
-readgroup_file: "/home/eherman/scratch/Stothard/BISULFITE/resources/reference_files/rg_labels_small.txt"
-
+readgroup_file: "/home/eherman/scratch/Stothard/BISULFITE/resources/reference_files/rg_labels.txt"
 
 
 
