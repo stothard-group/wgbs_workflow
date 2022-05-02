@@ -48,7 +48,7 @@ lines from shell commands in the `workflow/snakefile` file. Programs must be ins
 path must be given in the shell command. Note that many of these tools require their own dependencies.
 
  - [BBMap](https://github.com/BioInfoTools/BBMap) (specifically partition.sh)
- - [Java SE Development Kit>=14.0.2](https://www.oracle.com/ca-en/java/technologies/javase/jdk13-archive-downloads.html)
+ - [Java SE Development Kit>=13.0.2](https://www.oracle.com/ca-en/java/technologies/javase/jdk13-archive-downloads.html)
  - [Bismark](https://www.bioinformatics.babraham.ac.uk/projects/bismark/)
  - [Picard=2.26.3](https://github.com/broadinstitute/picard)
  - [Samtools](http://www.htslib.org/)
@@ -66,7 +66,6 @@ The following inputs are required:
  - A reference genome
  - A tab-formatted file containing read group information with the fields ID, SM, LB, PL for all samples. [See this 
 GATK article on read groups for more information](https://gatk.broadinstitute.org/hc/en-us/articles/360035890671-Read-groups)
- - A file containing a list of contig names; one name per line
 
 Raw fastq files should be gzip-compressed with the filename structure `{sample}_R1.fastq.gz` and `{sample}_R2.fastq.gz`. 
 Read group ID information will be used to merge multiplexed samples.
@@ -74,14 +73,6 @@ Read group ID information will be used to merge multiplexed samples.
 The paths to the required input files and directories should be edited in the file `config/WGBS.config.yaml`. This file 
 also contains species- and analysis-specific parameters affecting workflow function.
 
-
-
----
-*NOTE*
-
-If using NovaSeq6000 samples, add `--2colour 20` to the shell command for `rule trimgalore`.
-
----
 
 
 ## Running the workflow
@@ -101,6 +92,9 @@ rules within the `workflow/snakefile` file.
 
 ---
 *NOTE*
+
+If using NovaSeq6000 samples, add `--2colour 20` to the shell command for `rule trimgalore`.
+
 
 The core and RAM requirements for Bismark alignment (`rule align`) have a special relationship to the value of the 
 `threads` parameter. Please consult the information on the `--parallel` option in [Bismark documentation Appendix (II)](https://github.com/FelixKrueger/Bismark/tree/master/Docs) 
