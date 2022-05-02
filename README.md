@@ -114,26 +114,26 @@ samples, {inputID} and {sample} values will be identical. Otherwise, {sample} na
 file specified in `config/WGBS.config.yaml`.
 
 
-| Directory          | File name                                     | Description                                                 |
-|--------------------|-----------------------------------------------|-------------------------------------------------------------|
-| split              | {inputID}_R{1,2}_part{n}.fastq.gz             | Raw fastq files split into n-parts (specified in config)    |
-| trimmed            | {inputID}_R{1,2}_part{n}_val_1.fq.gz          | Trimmed fastq files split into n-parts                      |
-| align              | {inputID}_R1_part{n}_val_1_bismark_bt2_pe.bam | Bam alignment file produced by Bismark <br/>for each n-part |
-| align              | {inputID}.bismark.m.bam                       | Merged bam file for each input ID                           |
-| base_quality_recal | {inputID}.deduplicated.bam                    | Bam file following read deduplication                       |
-| base_quality_recal | {inputID}.deduplicated.rgid.bam               | Deduplicated bam file with read group IDs added             |
-| base_quality_recal | {sample}.deduplicated.rgid.m.bam              | Bam files merged per sample if multiplexed                  |
-| base_quality_recal | {sample}.deduplicated.rgid.m.sorted.bam       | Sorted merged bam file                                      |
-| stat_and_coverage  | {sample}.average_coverage.txt                 | Average sequencing depth across the sample                  |
+| Directory          | File name                                     | Description                                            |
+|--------------------|-----------------------------------------------|--------------------------------------------------------|
+| split              | {inputID}_R{1,2}_part{n}.fastq.gz             | Raw fastq files split into n-parts (specified in config) |
+| trimmed            | {inputID}_R{1,2}_part{n}_val_1.fq.gz          | Trimmed fastq files split into n-parts                 |
+| align              | {inputID}_R1_part{n}_val_1_bismark_bt2_pe.bam | Bam alignment file produced by Bismark for each n-part |
+| align              | {inputID}.bismark.m.bam                       | Merged bam file for each input ID                      |
+| base_quality_recal | {inputID}.deduplicated.bam                    | Bam file following read deduplication                  |
+| base_quality_recal | {inputID}.deduplicated.rgid.bam               | Deduplicated bam file with read group IDs added        |
+| base_quality_recal | {sample}.deduplicated.rgid.m.bam              | Bam files merged per sample if multiplexed             |
+| base_quality_recal | {sample}.deduplicated.rgid.m.sorted.bam       | Sorted merged bam file                                 |
+| stat_and_coverage  | {sample}.average_coverage.txt                 | Average sequencing depth across the sample             |
 | stat_and_coverage  | {sample}.bases_covered.txt                    | Number of bases above the minimum depth specified in config |
-| stat_and_coverage  | {sample}.alignment_stats.txt                  | Read alignment statistics                                   |
-| cgmap              | {sample}.ATCGmap.gz                           | ATCGmap file derived from sample bam                        |
-| cgmap              | {sample}.bayes_dynamicP.SNPs.{vcf,snv}        | Variants in both VCF and SNV format files                   |
-| cgmap              | {sample}.bayes_dynamicP.SNPs.reheader.vcf     | VCF file with correct sample info in header                 |
-| snps               | {sample}.bayes_dynamicP.SNPs.rh.noNs.vcf      | VCF file with non-A/T/G/C variants removed                  |
-| snps               | {sample}.rawSNPs.vcf                          | VCF file containing only biallelic SNPs                     |
-| snps               | {sample}.filtSNPs.vcf                         | Soft-filtered VCF file with FAIL_DP filter tag              |
-| snps               | {sample}.goodSNPs.vcf                         | VCF file containing quality-filtered SNPs                   |
+| stat_and_coverage  | {sample}.alignment_stats.txt                  | Read alignment statistics                              |
+| cgmap              | {sample}.ATCGmap.gz                           | ATCGmap file derived from sample bam                   |
+| cgmap              | {sample}.bayes_dynamicP.SNPs.{vcf,snv}        | Variants in both VCF and SNV format files              |
+| cgmap              | {sample}.bayes_dynamicP.SNPs.reheader.vcf     | VCF file with correct sample info in header            |
+| snps               | {sample}.bayes_dynamicP.SNPs.rh.noNs.vcf      | VCF file with non-A/T/G/C variants removed             |
+| snps               | {sample}.rawSNPs.vcf                          | VCF file containing only biallelic SNPs                |
+| snps               | {sample}.filtSNPs.vcf                         | Soft-filtered VCF file with FAIL_DP filter tag         |
+| snps               | {sample}.goodSNPs.vcf                         | VCF file containing quality-filtered SNPs              |
 
 
 Benchmark files are created for every rule with cluster submission detailing job resource use. These files are found in 
