@@ -15,7 +15,7 @@ configfile: 'config/WGBS.config.yaml'
 # Set local variables
 #########################################################################################
 RAW_FASTQ_DIR = config["raw_fastq_dir"]
-OUTPUT_DIR = "results/"
+OUTPUT_DIR = "results_comparison/"
 SPLIT_DIR = OUTPUT_DIR + "split/"
 TRIMGALORE_DIR = OUTPUT_DIR + "trimmed/"
 ALIGN_DIR = OUTPUT_DIR + "align/"
@@ -48,25 +48,30 @@ def get_combined_samples():
     sam_list = list(set(sam_list_all))
     return sam_list
 
-#list_of_samples = get_combined_samples()
-list_of_samples, = glob_wildcards(join(CGMAP_DIR + "{sam}.bayes_dynamicP.SNPs.vcf"))
+list_of_samples = get_combined_samples()
+#list_of_samples, = glob_wildcards(join(CGMAP_DIR + "{sam}.bayes_dynamicP.SNPs.vcf"))
 #########################################################################################
 # rule to trigger generation of target files
 #########################################################################################
-localrules: remove_Ns, sample_header, hard_filter
+localrules: hard_filter
 
 rule final:
     input:
-        expand(SPLIT_DIR + "{sample}_R1_part{new}.fastq.gz", sample=samples, new=range(n_of_chunks)),
-        expand(TRIMGALORE_DIR + "{sample}_R2_part{new}_val_2.fq.gz", sample=samples, new=range(n_of_chunks)), #  trimming
-        GENOME_DIR + "Bisulfite_Genome/CT_conversion/BS_CT.1.bt2", #  build genome index
-        expand(RECAL_DIR+ "{sample}.deduplicated.rgid.bam", sample=samples), # add read group IDs
-        expand(RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam", sample_list_val=list_of_samples), #  sort merged bam files
-        expand(RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam.bai", sample_list_val=list_of_samples), #  index sorted bismark files
-        expand(STAT_DIR + "{sample_list_val}.alignment_stats.txt", sample_list_val=list_of_samples), #  calculate statistics
-        expand(CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.vcf", sample_list_val=list_of_samples), #  get SNPs
-        GENOME_DIR + GENOME_BASENAME + ".dict", #  create sequence dictionary for reference
-        expand(SNPSINDELS_DIR + "{sample_list_val}.goodSNPs.vcf", sample_list_val=list_of_samples) #  get the good SNPs at the end
+   #     expand(SPLIT_DIR + "{sample}_R1_part{new}.fastq.gz", sample=samples, new=range(n_of_chunks)),
+   #     expand(TRIMGALORE_DIR + "{sample}_R2_part{new}_val_2.fq.gz", sample=samples, new=range(n_of_chunks)), #  trimming
+   #     GENOME_DIR + "Bisulfite_Genome/CT_conversion/BS_CT.1.bt2", #  build genome index
+   #     expand(RECAL_DIR+ "{sample}.deduplicated.rgid.bam", sample=samples), # add read group IDs
+   #     expand(RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam", sample_list_val=list_of_samples), #  sort merged bam files
+   #     expand(RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam.bai", sample_list_val=list_of_samples), #  index sorted bismark files
+   #     expand(STAT_DIR + "{sample_list_val}.alignment_stats.txt", sample_list_val=list_of_samples), #  calculate statistics
+   #     expand(CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.vcf", sample_list_val=list_of_samples), #  get SNPs
+   #     GENOME_DIR + GENOME_BASENAME + ".dict", #  create sequence dictionary for reference
+        expand(CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.reheader.vcf.gz", sample_list_val=list_of_samples),
+        expand(CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.reheader.vcf.gz.tbi", sample_list_val=list_of_samples),
+
+        SNPSINDELS_DIR + "merged.bayes_dynamicP.a.SNPs.reheader.vcf.gz",
+        SNPSINDELS_DIR+ "merged.bayes_dynamicP.a.SNPs.reheader.altonly.vcf",
+        expand(SNPSINDELS_DIR + "merged.a.goodSNPs.vcf", sample_list_val=list_of_samples) #  get the good SNPs at the end
 
 
 #########################################################################################
@@ -116,7 +121,7 @@ rule trimgalore:
     resources:
         cores= 4,
         mem_mb= 8000,
-        runtime= 180
+        runtime= 360
     shell:
         """
         module load python/3.9
@@ -165,12 +170,12 @@ rule align:
     resources:
         cores= 24,
         mem_mb= 64000,
-        runtime= 720
+        runtime= 900
     output:
         ALIGN_DIR + "{sample}_R1_part{new}_val_1_bismark_bt2_pe.bam"
     shell:
         """
-        module load samtools perl StdEnv/2020 bismark bowtie2
+        module load StdEnv/2020 samtools perl StdEnv/2020 bismark bowtie2/2.4.1
         bismark --genome {GENOME_DIR} -1 {input.R1} -2 {input.R2} \
         --old_flag --no_dovetail \
         --parallel {threads} \
@@ -220,12 +225,12 @@ rule dedup:
     resources:
         cores= 16,
         mem_mb= 64000,
-        runtime= 420
+        runtime= 640
     params:
         lambda wildcards: wildcards.sample
     shell:
         """
-        module load samtools perl StdEnv/2020 bismark bowtie2
+        module load StdEnv/2020 bowtie2  samtools perl bismark
         deduplicate_bismark -p \
         --output_dir {RECAL_DIR} -o {params} \
         {input}
@@ -238,7 +243,10 @@ rule dedup:
 
 def get_rg_label(sample):
     split_sample = sample.split(".")
-    sample_id_part = split_sample[4]
+    if split_sample[3].startswith("NEBNext"):
+        sample_id_part = split_sample[4]
+    else:
+        sample_id_part = split_sample[3]
     rg_list = pd.read_csv(READGROUP_FILE, sep='\t')
     line = rg_list[rg_list['SM'] == int(sample_id_part)].copy()
     ID = line['ID'].values[0]
@@ -301,6 +309,10 @@ def merge_sample_list(sample_name):
             split_bam_name = bam.split(".")
             if sample_name == split_bam_name[4]:
                 keep_bams.append(bam)
+            elif sample_name == split_bam_name[3]:
+                keep_bams.append(bam)
+            else:
+                pass
         input_string = ''
         for kept_bam in keep_bams:
             input_string = input_string + "I=" + RECAL_DIR + kept_bam + " "
@@ -347,18 +359,18 @@ rule sortsam:
     output:
         RECAL_DIR + "{sample_list_val}.deduplicated.rgid.m.sorted.bam"
     params:
-        tmpdir = "./tmp_{sample_list_val}"
+        tmpdir = lambda wildcards: RECAL_DIR + "tmp_" + wildcards.sample_list_val
     benchmark:
         BENCHMARK_DIR + "sortsam.{sample_list_val}.txt"
-    threads: 8
+    threads: 4
     resources:
-        cores= 8,
-        mem_mb= 16000,
-        runtime= 300
+        cores= 4,
+        mem_mb= 64000,
+        runtime= 500
     shell:
         """
         module load samtools
-        samtools sort -o {output} -O bam -@ {threads} {input}
+        samtools sort -o {output} -O bam -@ {threads} -m 4000m --write-index -T {params.tmpdir} {input}
         """
 
 
@@ -377,7 +389,7 @@ rule b_index:
     resources:
         cores= 1,
         mem_mb= 500,
-        runtime= 30
+        runtime= 120
     shell:
         """
         module load samtools
@@ -401,8 +413,8 @@ rule coverage:
     threads: 1
     resources:
         cores= 1,
-        mem_mb= 2000,
-        runtime= 420
+        mem_mb= 1000,
+        runtime= 720
     shell:
         """
         module load samtools
@@ -430,7 +442,7 @@ rule cgmap_conversion:
     resources:
         cores= 1,
         mem_mb= 2000,
-        runtime= 2160
+        runtime= 3600
     shell:
         """
         {CGMAPTOOLS} convert bam2cgmap -b {input.align} \
@@ -443,8 +455,8 @@ rule cgmap:
     input:
         CGMAP_DIR + "{sample_list_val}.ATCGmap.gz"
     output:
-        vcf= CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.vcf",
-        out = CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.snv"
+        vcf= CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.vcf",
+        out = CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.snv"
     benchmark:
         BENCHMARK_DIR + "cgmap.{sample_list_val}.txt"
     threads: 1
@@ -456,51 +468,122 @@ rule cgmap:
         """
         module load python/2.7
         {CGMAPTOOLS} snv -i {input} \
-        -o {output.out} -v {output.vcf} \
+        -a -o {output.out} -v {output.vcf} \
         -m bayes --bayes-dynamicP
         """
 
+rule compress:
+    input:
+        CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.vcf"
+    output:
+        gz = CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.vcf.gz",
+    threads: 1
+    resources:
+        cores= 1,
+        mem_mb= 2000,
+        runtime= 360
+    shell:
+        """
+        module load bcftools
+        bgzip {input}
+        tabix -p vcf {output.gz}
+        """
+
+
 rule sample_header:
     input:
-        CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.vcf"
+        CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.vcf.gz"
     params:
-        lambda wildcards: wildcards.sample_list_val
+        name = lambda wildcards: wildcards.sample_list_val,
+        file = lambda wildcards: CGMAP_DIR + wildcards.sample_list_val + ".headerline.txt",
+        old = lambda wildcards: CGMAP_DIR + wildcards.sample_list_val + ".oldheader.txt",
+        new = lambda wildcards: CGMAP_DIR + wildcards.sample_list_val + ".newheader.txt",
     output:
-        CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.reheader.vcf"
+        gz = CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.reheader.vcf.gz",
+        tbi = CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.reheader.vcf.gz.tbi",
+    threads: 1
+    resources:
+        cores= 1,
+        mem_mb= 1000,
+        runtime= 60
     shell:
         """
-        sed -e 's/NA00001/{params}/g' {input} > {output}
+        module load bcftools
+        echo {params.name} > {params.file}
+        bcftools view -h {input} > {params.old}
+        ./reheader.sh {params.old} {params.new}
+        bcftools reheader -s {params.file} -h {params.new} -o {output.gz} {input}
+        tabix -p vcf {output.gz}
         """
 
-#########################################################################################
-# Remove unidentified variants
-#########################################################################################
-
-rule remove_Ns:
+rule remove_vague:
     input:
-        CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.reheader.vcf"
+        gz = CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.reheader.vcf.gz",
     output:
-        SNPSINDELS_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.rh.noNs.vcf",
+        vcf = CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.reheader.ATCG.vcf",
+        gz = CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.reheader.ATCG.vcf.gz",
+    params:
+        val = lambda wildcards: wildcards.sample_list_val
+    threads: 1
+    resources:
+        cores=1,
+        mem_mb= 2000,
+        runtime=720
     shell:
         """
-        cat {input} | grep -vP '^#'  > {wildcards.sample_list_val}.vcf.body
-        cat {input} | grep -P '^#' > {output}
-        cat {wildcards.sample_list_val}.vcf.body | awk -v OFS='\t' '{{ if(($4!="N" && ($5=="A"||$5=="C"||$5=="G"||$5=="T"))) {{ print }} }}' >> {output}
-        rm {wildcards.sample_list_val}.vcf.body
+        module load bcftools
+        zcat {input} | grep -vP '^#'  > {params.val}.merged.vcf.body
+        zcat {input} | grep -P '^#' > {output}
+        cat {params.val}.merged.vcf.body | awk -v OFS='\t' '{{ if(($4!="N" && ($5=="A"||$5=="C"||$5=="G"||$5=="T"))) {{ print }} }}' >> {output.vcf}
+        bgzip {output.vcf}
+        tabix -p {output.gz}
+        rm {params.val}.merged.vcf.body
         """
+
+
+rule merge_bcftools:
+    input:
+        expand(CGMAP_DIR + "{sample_list_val}.bayes_dynamicP.a.SNPs.reheader.ATCG.vcf.gz", sample_list_val=list_of_samples)
+    output:
+        SNPSINDELS_DIR + "merged.bayes_dynamicP.a.SNPs.reheader.vcf.gz"
+    threads: 1
+    resources:
+        cores= 1,
+        mem_mb= 2000,
+        runtime= 720
+    shell:
+        """
+        module load bcftools
+        bcftools merge -O z -m snps -o {output} {input}
+        """
+
+rule remove_ref:
+    input:
+        SNPSINDELS_DIR + "merged.bayes_dynamicP.a.SNPs.reheader.vcf.gz"
+    output:
+        SNPSINDELS_DIR + "merged.bayes_dynamicP.a.SNPs.reheader.altonly.vcf"
+    threads: 1
+    resources:
+        cores= 1,
+        mem_mb= 2000,
+        runtime= 720
+    shell:
+        """
+        module load bcftools
+        bcftools view -i 'GT="alt"' -O v -o {output} {input}
+        """
+
 
 #########################################################################################
 # Select bi-allelic SNPs
 #########################################################################################
 rule extract_snps:
     input:
-        SNPSINDELS_DIR + "{sample_list_val}.bayes_dynamicP.SNPs.rh.noNs.vcf"
+        SNPSINDELS_DIR + "merged.bayes_dynamicP.a.SNPs.reheader.altonly.vcf"
     output:
-        SNPSINDELS_DIR + "{sample_list_val}.rawSNPs.vcf"
+        SNPSINDELS_DIR + "merged.a.rawSNPs.vcf"
     params:
         genome = GENOME_DIR + GENOME_BASENAME + ".fa"
-    benchmark:
-        BENCHMARK_DIR + "extract_snps.{sample_list_val}.txt"
     threads: 2
     resources:
         cores = 2,
@@ -539,15 +622,13 @@ rule sequence_dict:
 
 rule filter:
     input:
-        vcf = SNPSINDELS_DIR + "{sample_list_val}.rawSNPs.vcf",
+        vcf = SNPSINDELS_DIR + "merged.a.rawSNPs.vcf",
         dict = GENOME_DIR + GENOME_BASENAME + ".dict",
     params:
         genome = GENOME_DIR + GENOME_BASENAME + ".fa",
         tmp = "tmp/"
     output:
-        SNPSINDELS_DIR + "{sample_list_val}.filtSNPs.vcf"
-    benchmark:
-        BENCHMARK_DIR + "filter.{sample_list_val}.txt"
+        SNPSINDELS_DIR + "merged.a.filtSNPs.vcf"
     threads: 2
     resources:
         cores= 2,
@@ -571,9 +652,9 @@ rule filter:
 #########################################################################################
 rule hard_filter:
     input:
-        SNPSINDELS_DIR + "{sample_list_val}.filtSNPs.vcf"
+        SNPSINDELS_DIR + "merged.a.filtSNPs.vcf"
     output:
-        SNPSINDELS_DIR + "{sample_list_val}.goodSNPs.vcf"
+        SNPSINDELS_DIR + "merged.a.goodSNPs.vcf"
     shell:
         """
         module load bcftools
